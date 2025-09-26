@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>PR Heatmap Viewer</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .file { margin: 20px 0; border: 1px solid #ddd; border-radius: 6px; padding: 15px; background: #fafafa; }
+        .line { margin: 8px 0; padding: 8px; border-left: 4px solid #ddd; background: white; border-radius: 4px; }
+        .critical { border-left-color: #ef4444; background: linear-gradient(90deg, #fef2f2 0%, #ffffff 100%); }
+        .high { border-left-color: #f97316; background: linear-gradient(90deg, #fff7ed 0%, #ffffff 100%); }
+        .medium { border-left-color: #3b82f6; background: linear-gradient(90deg, #eff6ff 0%, #ffffff 100%); }
+        .low { border-left-color: #22c55e; background: linear-gradient(90deg, #f0fdf4 0%, #ffffff 100%); }
+        .line-number { font-weight: bold; color: #666; margin-right: 15px; min-width: 40px; display: inline-block; }
+        .severity { font-weight: bold; margin-right: 15px; padding: 2px 8px; border-radius: 4px; color: white; font-size: 12px; }
+        .severity.critical { background: #ef4444; }
+        .severity.high { background: #f97316; }
+        .severity.medium { background: #3b82f6; }
+        .severity.low { background: #22c55e; }
+        .score { color: #666; margin-right: 15px; }
+        .reason { color: #888; font-style: italic; }
+        .code { font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace; font-size: 13px; margin-top: 5px; }
+        .summary { background: #e5e7eb; padding: 15px; border-radius: 6px; margin-bottom: 20px; }
+        .summary h3 { margin-top: 0; }
+        .stats { display: flex; gap: 20px; flex-wrap: wrap; }
+        .stat { background: white; padding: 10px; border-radius: 4px; min-width: 120px; }
+        .stat-value { font-size: 24px; font-weight: bold; color: #1f2937; }
+        .stat-label { font-size: 12px; color: #6b7280; text-transform: uppercase; }
+        .loading { text-align: center; padding: 40px; color: #666; }
+        .error { color: #ef4444; background: #fef2f2; padding: 15px; border-radius: 6px; border: 1px solid #fecaca; }
+        .file-header { background: #f3f4f6; padding: 10px; margin: -15px -15px 15px -15px; border-radius: 6px 6px 0 0; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 PR Heatmap Analysis</h1>
+        <div id="loading" class="loading">
+            <h3>Loading heatmap data...</h3>
+            <p>This may take a moment as we analyze the PR...</p>
+        </div>
+        <div id="content"></div>
+    </div>
+
+    <script>
+        // Sample heatmap data for PR #448
+        const sampleData = {
+            "prInfo": {
+                "owner": "SylphAI-Inc",
+                "repo": "AdalFlow",
+                "pullNumber": 448,
+                "title": "Fix #382: Make Gradient data_id optional to prevent tutorial errors",
+                "author": "pxkundu"
+            },
+            "files": [
+                {
+                    "filename": "adalflow/adalflow/components/model_client/bedrock_client.py",
+                    "lines": [
+                        {
+                            "line": "_bedrock_runtime_exceptions = None",
+                            "lineNumber": 30,
+                            "hasChanged": true,
+                            "shouldBeReviewedScore": 0.85,
+                            "shouldReviewWhy": "Global variable initialization that could cause issues",
+                            "severity": "critical"
+                        },
+                        {
+                            "line": "def get_bedrock_runtime_exceptions():",
+                            "lineNumber": 33,
+                            "hasChanged": true,
+                            "shouldBeReviewedScore": 0.82,
+                            "shouldReviewWhy": "Function definition that handles AWS client initialization",
+                            "severity": "critical"
+                        },
+                        {
+                            "line": "    _bedrock_runtime_exceptions = boto3.client(",
+                            "lineNumber": 38,
+                            "hasChanged": true,
+                            "shouldBeReviewedScore": 0.78,
+                            "shouldReviewWhy": "AWS client creation with potential credential issues",
+                            "severity": "high"
+                        },
+                        {
+                            "line": "        service_name=\"bedrock-runtime\",",
+                            "lineNumber": 39,
+                            "hasChanged": true,
+                            "shouldBeReviewedScore": 0.65,
+                            "shouldReviewWhy": "Service configuration parameter",
+                            "severity": "high"
+                        },
+                        {
+                            "line": "        region_name=os.getenv(\"AWS_REGION_NAME\", \"us-east-1\"),",
+                            "lineNumber": 40,
+                            "hasChanged": true,
+                            "shouldBeReviewedScore": 0.72,
+                            "shouldReviewWhy": "Environment variable usage with default fallback",
+                            "severity": "high"
+                        }
+                    ],
+                    "severityDistribution": {
+                        "critical": 2,
+                        "high": 3,
+                        "medium": 0,
+                        "low": 0
+                    }
+                },
+                {
+                    "filename": "pyproject.toml",
+                    "lines": [
+                        {
+                            "line": "+[tool.poetry.group.test.dependencies]",
+                            "lineNumber": 1,
+                            "hasChanged": true,
+                            "shouldBeReviewedScore": 0.4,
+                            "shouldReviewWhy": "New dependency group added",
+                            "severity": "medium"
+                        },
+                        {
+                            "line": "+pytest-mock = \"^3.15.1\"",
+                            "lineNumber": 2,
+                            "hasChanged": true,
+                            "shouldBeReviewedScore": 0.6,
+                            "shouldReviewWhy": "New test dependency added",
+                            "severity": "high"
+                        },
+                        {
+                            "line": "+lancedb = \"^0.25.0\"",
+                            "lineNumber": 3,
+                            "hasChanged": true,
+                            "shouldBeReviewedScore": 0.6,
+                            "shouldReviewWhy": "New test dependency added",
+                            "severity": "high"
+                        }
+                    ],
+                    "severityDistribution": {
+                        "critical": 0,
+                        "high": 2,
+                        "medium": 1,
+                        "low": 0
+                    }
+                }
+            ],
+            "overallScore": 0.65,
+            "totalLinesChanged": 8,
+            "criticalIssues": 2,
+            "severityDistribution": {
+                "critical": 2,
+                "high": 5,
+                "medium": 1,
+                "low": 0
+            }
+        };
+
+        function displayHeatmap(data) {
+            const content = document.getElementById('content');
+            const loading = document.getElementById('loading');
+            
+            loading.style.display = 'none';
+            
+            let html = `
+                <div class="summary">
+                    <h3>📊 Analysis Summary</h3>
+                    <div class="stats">
+                        <div class="stat">
+                            <div class="stat-value">${(data.overallScore * 100).toFixed(1)}%</div>
+                            <div class="stat-label">Overall Score</div>
+                        </div>
+                        <div class="stat">
+                            <div class="stat-value">${data.totalLinesChanged}</div>
+                            <div class="stat-label">Lines Changed</div>
+                        </div>
+                        <div class="stat">
+                            <div class="stat-value">${data.criticalIssues}</div>
+                            <div class="stat-label">Critical Issues</div>
+                        </div>
+                        <div class="stat">
+                            <div class="stat-value">${data.files.length}</div>
+                            <div class="stat-label">Files Modified</div>
+                        </div>
+                    </div>
+                    <p><strong>PR:</strong> ${data.prInfo.title}</p>
+                    <p><strong>Author:</strong> ${data.prInfo.author}</p>
+                </div>
+            `;
+            
+            data.files.forEach(file => {
+                const changedLines = file.lines.filter(l => l.hasChanged);
+                if (changedLines.length > 0) {
+                    html += `
+                        <div class="file">
+                            <div class="file-header">📄 ${file.filename}</div>
+                            <p><strong>Lines with changes:</strong> ${changedLines.length} | 
+                               <span style="color: #ef4444;">Critical: ${file.severityDistribution.critical}</span> | 
+                               <span style="color: #f97316;">High: ${file.severityDistribution.high}</span> | 
+                               <span style="color: #3b82f6;">Medium: ${file.severityDistribution.medium}</span> | 
+                               <span style="color: #22c55e;">Low: ${file.severityDistribution.low}</span></p>
+                    `;
+                    
+                    changedLines.forEach(line => {
+                        const severity = line.severity || 'low';
+                        const score = ((line.shouldBeReviewedScore || 0) * 100).toFixed(0);
+                        html += `
+                            <div class="line ${severity}">
+                                <div>
+                                    <span class="line-number">${line.lineNumber}</span>
+                                    <span class="severity ${severity}">${severity.toUpperCase()}</span>
+                                    <span class="score">${score}%</span>
+                                    <span class="reason">${line.shouldReviewWhy || ''}</span>
+                                </div>
+                                <div class="code">${line.line}</div>
+                            </div>
+                        `;
+                    });
+                    
+                    html += '</div>';
+                }
+            });
+            
+            content.innerHTML = html;
+        }
+
+        // Load sample data immediately
+        setTimeout(() => {
+            displayHeatmap(sampleData);
+        }, 1000);
+    </script>
+</body>
+</html>

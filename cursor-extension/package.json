@@ -1,0 +1,89 @@
+{
+  "name": "pr-heatmap-reviewer",
+  "displayName": "PR Heatmap Reviewer",
+  "description": "AI-powered code review heatmap with inline scoring and CodeRabbit integration",
+  "version": "1.0.0",
+  "publisher": "your-publisher",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Other",
+    "Linters",
+    "Code Review"
+  ],
+  "activationEvents": [
+    "onCommand:prHeatmap.analyzePR",
+    "onCommand:prHeatmap.clearHeatmap"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "prHeatmap.analyzePR",
+        "title": "Analyze PR Heatmap",
+        "category": "PR Heatmap"
+      },
+      {
+        "command": "prHeatmap.clearHeatmap",
+        "title": "Clear Heatmap",
+        "category": "PR Heatmap"
+      }
+    ],
+    "configuration": {
+      "title": "PR Heatmap Reviewer",
+      "properties": {
+        "prHeatmap.githubToken": {
+          "type": "string",
+          "default": "",
+          "description": "GitHub API token for accessing PR data"
+        },
+        "prHeatmap.openaiApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "OpenAI API key for AI analysis"
+        },
+        "prHeatmap.serverUrl": {
+          "type": "string",
+          "default": "http://localhost:3000",
+          "description": "URL of the heatmap analysis server"
+        }
+      }
+    },
+    "colors": {
+      "prHeatmap.critical": {
+        "dark": "#ef4444",
+        "light": "#dc2626",
+        "highContrast": "#ff0000"
+      },
+      "prHeatmap.high": {
+        "dark": "#f97316",
+        "light": "#ea580c",
+        "highContrast": "#ff8c00"
+      },
+      "prHeatmap.medium": {
+        "dark": "#3b82f6",
+        "light": "#2563eb",
+        "highContrast": "#0066cc"
+      },
+      "prHeatmap.low": {
+        "dark": "#22c55e",
+        "light": "#16a34a",
+        "highContrast": "#00cc00"
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.74.0",
+    "@types/node": "16.x",
+    "typescript": "^4.9.4"
+  },
+  "dependencies": {
+    "axios": "^1.6.0"
+  }
+}

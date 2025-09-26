@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>PR Heatmap Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .file { margin: 20px 0; border: 1px solid #ccc; padding: 15px; }
+        .line { margin: 5px 0; padding: 5px; border-left: 4px solid #ddd; }
+        .critical { border-left-color: #ef4444; background-color: #fef2f2; }
+        .high { border-left-color: #f97316; background-color: #fff7ed; }
+        .medium { border-left-color: #3b82f6; background-color: #eff6ff; }
+        .low { border-left-color: #22c55e; background-color: #f0fdf4; }
+        .line-number { font-weight: bold; color: #666; margin-right: 10px; }
+        .severity { font-weight: bold; margin-right: 10px; }
+        .score { color: #666; }
+        .reason { color: #888; font-style: italic; }
+        .loading { text-align: center; padding: 20px; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <h1>PR Heatmap Test</h1>
+    <div id="loading" class="loading">Loading heatmap data...</div>
+    <div id="content"></div>
+
+    <script>
+        async function loadHeatmap() {
+            try {
+                const response = await fetch('http://localhost:3000/api/review', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        prUrl: 'https://github.com/SylphAI-Inc/AdalFlow/pull/448',
+                        includeCodeRabbit: false
+                    })
+                });
+                
+                const data = await response.json();
+                displayHeatmap(data);
+            } catch (error) {
+                document.getElementById('loading').innerHTML = 
+                    '<div class="error">Error loading heatmap: ' + error.message + '</div>';
+            }
+        }
+
+        function displayHeatmap(data) {
+            const content = document.getElementById('content');
+            const loading = document.getElementById('loading');
+            
+            loading.style.display = 'none';
+            
+            let html = `
+                <h2>PR Analysis Results</h2>
+                <p><strong>Overall Score:</strong> ${(data.overallScore * 100).toFixed(1)}%</p>
+                <p><strong>Total Lines Changed:</strong> ${data.totalLinesChanged}</p>
+                <p><strong>Critical Issues:</strong> ${data.criticalIssues}</p>
+                <p><strong>Severity Distribution:</strong> Critical: ${data.severityDistribution.critical}, 
+                   High: ${data.severityDistribution.high}, Medium: ${data.severityDistribution.medium}, 
+                   Low: ${data.severityDistribution.low}</p>
+            `;
+            
+            data.files.forEach(file => {
+                const changedLines = file.lines.filter(l => l.hasChanged);
+                if (changedLines.length > 0) {
+                    html += `
+                        <div class="file">
+                            <h3>${file.filename}</h3>
+                            <p>Lines with changes: ${changedLines.length}</p>
+                            <p>Severity: Critical: ${file.severityDistribution.critical}, 
+                               High: ${file.severityDistribution.high}, 
+                               Medium: ${file.severityDistribution.medium}, 
+                               Low: ${file.severityDistribution.low}</p>
+                    `;
+                    
+                    changedLines.forEach(line => {
+                        const severity = line.severity || 'low';
+                        const score = ((line.shouldBeReviewedScore || 0) * 100).toFixed(0);
+                        html += `
+                            <div class="line ${severity}">
+                                <span class="line-number">${line.lineNumber}</span>
+                                <span class="severity">${severity.toUpperCase()}</span>
+                                <span class="score">${score}%</span>
+                                <span class="reason">${line.shouldReviewWhy || ''}</span>
+                                <br>
+                                <code>${line.line}</code>
+                            </div>
+                        `;
+                    });
+                    
+                    html += '</div>';
+                }
+            });
+            
+            content.innerHTML = html;
+        }
+
+        // Load heatmap when page loads
+        loadHeatmap();
+    </script>
+</body>
+</html>

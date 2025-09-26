@@ -1,0 +1,288 @@
+import * as vscode from 'vscode';
+import axios from 'axios';
+
+interface TokenScore {
+  token: string;
+  score: number | null;
+  reason: string | null;
+  lineNumber: number;
+  characterIndex: number;
+  severity?: 'critical' | 'high' | 'medium' | 'low';
+  color?: 'red' | 'orange' | 'blue' | 'green';
+}
+
+interface LineAnalysis {
+  line: string;
+  lineNumber: number;
+  hasChanged: boolean;
+  shouldBeReviewedScore?: number;
+  shouldReviewWhy?: string;
+  mostImportantCharacterIndex: number;
+  severity?: 'critical' | 'high' | 'medium' | 'low';
+  color?: 'red' | 'orange' | 'blue' | 'green';
+  codeRabbitComments?: CodeRabbitComment[];
+}
+
+interface CodeRabbitComment {
+  id: string;
+  path: string;
+  line: number;
+  body: string;
+  severity: 'info' | 'warning' | 'error';
+  suggestion?: string;
+  category: string;
+}
+
+interface HeatmapData {
+  files: {
+    filename: string;
+    lines: LineAnalysis[];
+    tokenScores: TokenScore[];
+    codeRabbitComments: CodeRabbitComment[];
+  }[];
+}
+
+class HeatmapDecorator {
+  private decorations: Map<string, vscode.TextEditorDecorationType> = new Map();
+  private currentDecorations: Map<string, vscode.DecorationOptions[]> = new Map();
+
+  constructor() {
+    this.createDecorations();
+  }
+
+  private createDecorations() {
+    // Critical severity - red background
+    this.decorations.set('critical', vscode.window.createTextEditorDecorationType({
+      backgroundColor: new vscode.ThemeColor('prHeatmap.critical'),
+      color: new vscode.ThemeColor('editor.foreground'),
+      fontWeight: 'bold'
+    }));
+
+    // High severity - orange background
+    this.decorations.set('high', vscode.window.createTextEditorDecorationType({
+      backgroundColor: new vscode.ThemeColor('prHeatmap.high'),
+      color: new vscode.ThemeColor('editor.foreground'),
+      fontWeight: 'bold'
+    }));
+
+    // Medium severity - blue background
+    this.decorations.set('medium', vscode.window.createTextEditorDecorationType({
+      backgroundColor: new vscode.ThemeColor('prHeatmap.medium'),
+      color: new vscode.ThemeColor('editor.foreground'),
+      fontWeight: 'bold'
+    }));
+
+    // Low severity - green background
+    this.decorations.set('low', vscode.window.createTextEditorDecorationType({
+      backgroundColor: new vscode.ThemeColor('prHeatmap.low'),
+      color: new vscode.ThemeColor('editor.foreground'),
+      fontWeight: 'bold'
+    }));
+  }
+
+  applyHeatmap(editor: vscode.TextEditor, heatmapData: HeatmapData) {
+    this.clearHeatmap(editor);
+
+    const fileName = editor.document.fileName;
+    const fileData = heatmapData.files.find(f => fileName.includes(f.filename));
+    
+    if (!fileData) {
+      return;
+    }
+
+    const decorations: Map<string, vscode.DecorationOptions[]> = new Map();
+    
+    // Initialize decoration arrays
+    ['critical', 'high', 'medium', 'low'].forEach(severity => {
+      decorations.set(severity, []);
+    });
+
+    // Process each line
+    fileData.lines.forEach(line => {
+      if (line.hasChanged && line.severity && line.shouldBeReviewedScore) {
+        const range = new vscode.Range(
+          line.lineNumber - 1, 0,
+          line.lineNumber - 1, line.line.length
+        );
+
+        const decoration: vscode.DecorationOptions = {
+          range,
+          hoverMessage: this.createHoverMessage(line, fileData.codeRabbitComments || [])
+        };
+
+        decorations.get(line.severity)?.push(decoration);
+      }
+    });
+
+    // Apply decorations
+    decorations.forEach((decs, severity) => {
+      if (decs.length > 0) {
+        const decorationType = this.decorations.get(severity);
+        if (decorationType) {
+          editor.setDecorations(decorationType, decs);
+        }
+      }
+    });
+
+    this.currentDecorations.set(fileName, Array.from(decorations.values()).flat());
+  }
+
+  private createHoverMessage(line: LineAnalysis, codeRabbitComments: CodeRabbitComment[]): vscode.MarkdownString {
+    const message = new vscode.MarkdownString();
+    
+    // Header with severity and score
+    const scorePercent = ((line.shouldBeReviewedScore || 0) * 100).toFixed(0);
+    message.appendMarkdown(`## ${line.severity?.toUpperCase()} Priority - ${scorePercent}%\n\n`);
+    
+    // Reason for review
+    if (line.shouldReviewWhy) {
+      message.appendMarkdown(`**Review Reason:** ${line.shouldReviewWhy}\n\n`);
+    }
+    
+    // Line details
+    message.appendMarkdown(`**Line ${line.lineNumber}** | **Score:** ${line.shouldBeReviewedScore?.toFixed(2)}\n\n`);
+    
+    // CodeRabbit comments for this line
+    const lineComments = codeRabbitComments.filter(comment => comment.line === line.lineNumber);
+    if (lineComments.length > 0) {
+      message.appendMarkdown(`### 🤖 AI Review Comments\n\n`);
+      lineComments.forEach((comment, index) => {
+        message.appendMarkdown(`**${index + 1}. ${comment.category.toUpperCase()}** (${comment.severity})\n`);
+        message.appendMarkdown(`${comment.body}\n\n`);
+        
+        if (comment.suggestion) {
+          message.appendMarkdown(`**💡 Suggestion:** ${comment.suggestion}\n\n`);
+        }
+      });
+    }
+    
+    // Line content preview
+    message.appendMarkdown(`### Code Preview\n`);
+    message.appendCodeblock(line.line, 'typescript');
+    
+    return message;
+  }
+
+  clearHeatmap(editor: vscode.TextEditor) {
+    this.decorations.forEach(decoration => {
+      editor.setDecorations(decoration, []);
+    });
+    this.currentDecorations.delete(editor.document.fileName);
+  }
+
+  dispose() {
+    this.decorations.forEach(decoration => decoration.dispose());
+  }
+}
+
+class HeatmapProvider {
+  private decorator: HeatmapDecorator;
+  private serverUrl: string;
+
+  constructor() {
+    this.decorator = new HeatmapDecorator();
+    this.serverUrl = vscode.workspace.getConfiguration('prHeatmap').get('serverUrl', 'http://localhost:3000');
+  }
+
+  async analyzePR() {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) {
+      vscode.window.showErrorMessage('No active editor found');
+      return;
+    }
+
+    // Get PR URL from user
+    const prUrl = await vscode.window.showInputBox({
+      prompt: 'Enter GitHub PR URL',
+      placeHolder: 'https://github.com/owner/repo/pull/123',
+      validateInput: (value) => {
+        if (!value || !value.includes('github.com') || !value.includes('/pull/')) {
+          return 'Please enter a valid GitHub PR URL';
+        }
+        return null;
+      }
+    });
+
+    if (!prUrl) {
+      return;
+    }
+
+    // Show progress
+    await vscode.window.withProgress({
+      location: vscode.ProgressLocation.Notification,
+      title: "Analyzing PR heatmap...",
+      cancellable: false
+    }, async (progress) => {
+      try {
+        progress.report({ increment: 0, message: "Fetching PR data..." });
+        
+        const response = await axios.post(`${this.serverUrl}/api/review`, {
+          prUrl,
+          includeCodeRabbit: true
+        });
+
+        progress.report({ increment: 50, message: "Processing heatmap data..." });
+        
+        const heatmapData: HeatmapData = response.data;
+        
+        progress.report({ increment: 100, message: "Applying heatmap..." });
+        
+        this.decorator.applyHeatmap(editor, heatmapData);
+        
+        // Show summary
+        const totalLines = heatmapData.files.reduce((sum, file) => sum + file.lines.filter(l => l.hasChanged).length, 0);
+        const criticalLines = heatmapData.files.reduce((sum, file) => 
+          sum + file.lines.filter(l => l.severity === 'critical').length, 0);
+        
+        vscode.window.showInformationMessage(
+          `Heatmap applied! ${totalLines} changed lines analyzed, ${criticalLines} critical issues found.`
+        );
+
+      } catch (error) {
+        console.error('Heatmap analysis error:', error);
+        vscode.window.showErrorMessage(
+          `Failed to analyze PR: ${error instanceof Error ? error.message : 'Unknown error'}`
+        );
+      }
+    });
+  }
+
+  clearHeatmap() {
+    const editor = vscode.window.activeTextEditor;
+    if (editor) {
+      this.decorator.clearHeatmap(editor);
+      vscode.window.showInformationMessage('Heatmap cleared');
+    }
+  }
+
+  dispose() {
+    this.decorator.dispose();
+  }
+}
+
+export function activate(context: vscode.ExtensionContext) {
+  const provider = new HeatmapProvider();
+
+  // Register commands
+  const analyzeCommand = vscode.commands.registerCommand('prHeatmap.analyzePR', () => {
+    provider.analyzePR();
+  });
+
+  const clearCommand = vscode.commands.registerCommand('prHeatmap.clearHeatmap', () => {
+    provider.clearHeatmap();
+  });
+
+  context.subscriptions.push(analyzeCommand, clearCommand, provider);
+
+  // Add status bar item
+  const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+  statusBarItem.text = "$(graph) PR Heatmap";
+  statusBarItem.command = 'prHeatmap.analyzePR';
+  statusBarItem.tooltip = 'Analyze PR Heatmap';
+  statusBarItem.show();
+  context.subscriptions.push(statusBarItem);
+}
+
+export function deactivate() {
+  // Cleanup
+}
